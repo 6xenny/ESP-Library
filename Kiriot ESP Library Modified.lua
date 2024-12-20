@@ -37,7 +37,7 @@ local ESP = {
 	ScreenScale = 1,
 	Thickness = 2,
 	AttachShift = 1,
-	Bars = true,
+	Bars = false,
 	GlobalBars = {},
 	HrpName = "HumanoidRootPart",
 	Objects = setmetatable({}, {
@@ -122,65 +122,6 @@ function ESP.FOVCircle(radius)
 		Update = CircleTbl.Update
 	}
 end
-function ESP.GetTarget(Settings, GetEnemies, hrp)
-	hrp = hrp or ESP.HrpName
-	return function(chance, noVisCheck, ignoreList)
-		noVisCheck = Settings.Wallbang or Settings.WallBang or Settings.VisCheck == false or noVisCheck
-		ignorelist = Settings.IgnoreList or ignoreList
-		local cam = workspace.CurrentCamera
-		local camPos = cam.CFrame.p
-		local clPos, clPart, clModel
-		for i, v in next, GetEnemies() do
-			if v.Character and v.Character.Parent then
-				local part = v.Character:FindFirstChild("Head")
-				if chance and math.random(1, 100) >= Settings.HeadshotChance then
-					part = v.Character:FindFirstChild(hrp)
-				end
-				if part then
-					local p, vis = cam:WorldToViewportPoint(part.Position)
-					if vis then
-						local startPos = camPos
-						
-						local workspaceDist = (cam.CFrame.p - part.Position).magnitude
-						
-						local ray = Ray.new(startPos, CFrame.new(cam.CFrame.p, part.Position).LookVector.Unit * p.Z)
-						
-						local hit
-						if not noVisCheck then
-							local ignore = ignoreList or {}
-							ignore[# ignore + 1] = Me.Character
-							ignore[# ignore + 1] = part.Parent
-							ignore[# ignore + 1] = cam
-							
-							hit = workspace:FindPartOnRayWithIgnoreList(ray, ignore)
-						end
-						if not hit and workspaceDist <= Settings.AimDistance then
-							local dist
-							local ok = true
-							if Settings.AimMode == "Cursor" then
-								dist = (Vector3.new(mouse.X, mouse.Y + 36, 0) - Vector3.new(p.X, p.Y, 0)).magnitude
-								ok = dist <= (Settings.UsedFOVRange or Settings.FOVRange)
-							elseif Settings.AimMode == "Character" then
-								dist = (camPos - part.Position).magnitude
-							end
-							if not clPos and ok then
-								clPos = dist
-								clPart = part
-								clModel = v.Character
-							end
-							if ok and dist and dist < clPos then
-								clPos = dist
-								clPart = part
-								clModel = v.Character
-							end
-						end
-					end
-				end
-			end
-		end
-		return clPart, clModel
-	end
-end
 function ESP:GetTeam(p)
 	local ov = self.Overrides.GetTeam
 	if ov then
@@ -254,7 +195,6 @@ function ESP:AddObjectListener(parent, options)
 			end
 		end
 	end
-
 	if options.Recursive then
 		parent.DescendantAdded:Connect(NewListener)
 		for i, v in next, parent:GetDescendants() do
