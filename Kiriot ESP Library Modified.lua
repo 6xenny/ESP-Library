@@ -3,12 +3,12 @@ local ESP = {
 	Players = true,
 	Names = true,
 	Distance = false,
-	UsePlrDistance = false,
-	MaxPlrDistance = math.huge,
+	UseMeDistance = false,
+	MaxMeDistance = math.huge,
 	Boxes = true,
 	Health = true,
 	HealthOffsetX = 4,
-	HealthOffsetY = -2,
+	HealthOffsetY = - 2,
 	Items = false,
 	ItemOffset = 10,
 	Chams = false,
@@ -30,33 +30,34 @@ local ESP = {
 	TeamMates = true,
 	Font = "Plex",
 	TextSize = 19,
-	BoxShift = CFrame.new(0, -1.5, 0),
+	BoxShift = CFrame.new(0, - 1.5, 0),
 	BoxSize = Vector3.new(4, 6, 0),
 	Color = Color3.fromRGB(0, 166, 255),
-	WhitelistColor = Color3.fromRGB(166, 0, 255),
-	BlacklistColor = Color3.fromRGB(255, 0, 0),
+	HighlightColor = Color3.new(1, 1, 1),
+	ScreenScale = 1,
 	Thickness = 2,
 	AttachShift = 1,
+	Bars = false,
+	GlobalBars = {},
+	HrpName = "HumanoidRootPart",
 	Objects = setmetatable({}, {
 		__mode = "kv"
 	}),
+	Render = {},
 	Overrides = {},
-	IgnoreHumanoids = false,
 	UseRenderValue = true,
 	RenderValue = 200
 }
-local WhitelistPlayer = {
-	[""] = true
-}
-local BlacklistPlayer = {
-	[""] = true
-}
+getgenv().shared.ESP = ESP
+if ... and type(...) == "table" then
+	for i, v in next, ... do
+		ESP[i] = v
+	end
+end
 local cam = workspace.CurrentCamera
-local plrs = game:GetService("Players")
-local plr = plrs.LocalPlayer
-local mouse = plr:GetMouse()
-local uis = game:GetService("UserInputService")
-local V3new = Vector3.new
+local Players, UIS = game:GetService("Players"), game:GetService("UserInputService")
+local Me = Players.LocalPlayer
+local mouse = Me:GetMouse()
 local WorldToViewportPoint = cam.WorldToViewportPoint
 local PointToObjectSpace = CFrame.new().PointToObjectSpace
 local Cross = Vector3.new().Cross
@@ -64,15 +65,15 @@ local Folder = Instance.new("Folder", game.CoreGui)
 local chars = {}
 local lastFov, lastScale = nil, nil
 for i = 17700, 17800 do
-	chars[#chars + 1] = utf8.char(i)
+	chars[# chars + 1] = utf8.char(i)
 end
 for i = 160, 700 do
-	chars[#chars + 1] = utf8.char(i)
+	chars[# chars + 1] = utf8.char(i)
 end
 function GenerateName(x)
 	local e = ""
 	for _ = 1, tonumber(x) or math.random(10, 999) do
-		e = e .. chars[math.random(1, #chars)]
+		e = e .. chars[math.random(1, # chars)]
 	end
 	return e
 end
@@ -96,15 +97,32 @@ function GetBoundingBox(torso)
 	local size = round(Vector2.new(4 * scaleFactor, 5 * scaleFactor))
 	return onScreen, size, round(Vector2.new(torsoPosition.X - (size.X * .5), torsoPosition.Y - (size.Y * .5))), torsoPosition
 end
-function Draw(obj, props)
+local function Draw(obj, props)
 	local new = Drawing.new(obj)
 	props = props or {}
-	for i, v in pairs(props) do
+	for i, v in next, props do
 		new[i] = v
 	end
 	return new
 end
-ESP.Draw = Draw
+function ESP.FOVCircle(radius)
+	local FOVCircle = Drawing.new("Circle")
+	FOVCircle.Radius = radius
+	FOVCircle.Color = Color3.fromRGB(0, 166, 255)
+	FOVCircle.Thickness = 3
+	FOVCircle.Filled = false
+	local CircleTbl = {
+		Update = function()
+			FOVCircle.Position = UIS:GetMouseLocation()
+		end
+	}
+	table.insert(ESP.Objects, CircleTbl)
+	return {
+		Drawing = FOVCircle,
+		Tbl = CircleTbl,
+		Update = CircleTbl.Update
+	}
+end
 function ESP:GetTeam(p)
 	local ov = self.Overrides.GetTeam
 	if ov then
@@ -117,49 +135,33 @@ function ESP:IsTeamMate(p)
 	if ov then
 		return ov(p)
 	end
-	return self:GetTeam(p) == self:GetTeam(plr)
+	return self:GetTeam(p) == self:GetTeam(Me)
 end
 function ESP:GetColor(obj)
 	local ov = self.Overrides.GetColor
 	if ov then
 		return ov(obj)
 	end
-	local p = self:GetPlrFromChar(obj)
+	local p = self:GetMeFromChar(obj)
 	return p and self.TeamColor and p.Team and p.Team.TeamColor.Color or self.Color
 end
-function ESP:GetPlrFromChar(char)
-	local ov = self.Overrides.GetPlrFromChar
+function ESP:GetMeFromChar(char)
+	local ov = self.Overrides.GetMeFromChar
 	if ov then
 		return ov(char)
 	end
-	return plrs:GetPlayerFromCharacter(char)
-end
-function ESP:GetTargetInTable(target, ttype)
-	if target then
-		if ttype == "Whitelist" then
-			WhitelistPlayer[target] = true
-		elseif ttype == "Blacklist" then
-			BlacklistPlayer[target] = true
-		end
-	end
-end
-function ESP:RemoveTargetInTable(target)
-	if target then
-		if WhitelistPlayer and BlacklistPlayer then
-			WhitelistPlayer[target] = nil
-			BlacklistPlayer[target] = nil
-		end
-	end
+	
+	return Players:GetPlayerFromCharacter(char)
 end
 function ESP:Toggle(bool)
 	self.Enabled = bool
 	if not bool then
-		for i, v in pairs(self.Objects) do
+		for i, v in next, self.Objects do
 			if v.Type == "Box" then
 				if v.Temporary then
 					v:Remove()
 				else
-					for i, v in pairs(v.Components) do
+					for i, v in next, v.Components do
 						if i == "Highlight" then
 							v.Enabled = false
 						else
@@ -196,13 +198,25 @@ function ESP:AddObjectListener(parent, options)
 	end
 	if options.Recursive then
 		parent.DescendantAdded:Connect(NewListener)
-		for _, v in pairs(parent:GetDescendants()) do
+		for i, v in next, parent:GetDescendants() do
 			coroutine.wrap(NewListener)(v)
 		end
 	else
 		parent.ChildAdded:Connect(NewListener)
-		for _, v in pairs(parent:GetChildren()) do
+		for i, v in next, parent:GetChildren() do
 			coroutine.wrap(NewListener)(v)
+		end
+	end
+end
+function ESP:AddGlobalPlayerBar(name, options, onAdded)
+	table.insert(self.GlobalBars, {
+		name,
+		options,
+		onAdded
+	})
+	for i, box in next, self.Objects do
+		if box.Player then
+			coroutine.wrap(onAdded)(box, box:AddBar(name, options))
 		end
 	end
 end
@@ -210,7 +224,7 @@ local boxBase = {}
 boxBase.__index = boxBase
 function boxBase:Remove()
 	ESP.Objects[self.Object] = nil
-	for i, v in pairs(self.Components) do
+	for i, v in next, self.Components do
 		if i == "Highlight" then
 			v.Enabled = false
 			v:Remove()
@@ -231,6 +245,7 @@ function boxBase:Update()
 	else
 		color = self.Color or self.ColorDynamic and self:ColorDynamic() or ESP:GetColor(self.Object) or ESP.Color
 	end
+
 	local allow = true
 	if ESP.Overrides.UpdateAllow and not ESP.Overrides.UpdateAllow(self) then
 		allow = false
@@ -248,7 +263,7 @@ function boxBase:Update()
 		allow = false
 	end
 	if not allow then
-		for i, v in pairs(self.Components) do
+		for i, v in next, self.Components do
 			if i == "Highlight" then
 				v.Enabled = false
 			else
@@ -260,14 +275,14 @@ function boxBase:Update()
 	if ESP.Highlighted == self.Object then
 		color = ESP.HighlightColor
 	end
-	local IsPlrHighlighted = (ESP.Highlighted == self.Object and self.Player ~= nil)
+	local IsMeHighlighted = (ESP.Highlighted == self.Object and self.Player ~= nil)
 	local cf = self.PrimaryPart.CFrame
 	if ESP.FaceCamera then
 		cf = CFrame.new(cf.Position, cam.CFrame.Position)
 	end
 	local distance = math.floor((cam.CFrame.Position - cf.Position).magnitude)
-	if self.Player and ESP.UsePlrDistance and distance > ESP.MaxPlrDistance then
-		for i, v in pairs(self.Components) do
+	if self.Player and ESP.UseMeDistance and distance > ESP.MaxMeDistance then
+		for i, v in next, self.Components do
 			if i == "Highlight" then
 				v.Enabled = false
 			else
@@ -280,9 +295,9 @@ function boxBase:Update()
 	local size = self.Size
 	local locs = {
 		TopLeft = cf * ESP.BoxShift * CFrame.new(size.X / 2, size.Y / 2, 0),
-		TopRight = cf * ESP.BoxShift * CFrame.new(-size.X / 2, size.Y / 2, 0),
-		BottomLeft = cf * ESP.BoxShift * CFrame.new(size.X / 2, -size.Y / 2, 0),
-		BottomRight = cf * ESP.BoxShift * CFrame.new(-size.X / 2, -size.Y / 2, 0),
+		TopRight = cf * ESP.BoxShift * CFrame.new(- size.X / 2, size.Y / 2, 0),
+		BottomLeft = cf * ESP.BoxShift * CFrame.new(size.X / 2, - size.Y / 2, 0),
+		BottomRight = cf * ESP.BoxShift * CFrame.new(- size.X / 2, - size.Y / 2, 0),
 		TagPos = cf * ESP.BoxShift * CFrame.new(0, size.Y / 2, 0),
 		Torso = cf
 	}
@@ -299,12 +314,6 @@ function boxBase:Update()
 				self.Components.BoxOutline.Position = position
 				self.Components.BoxFill.Visible = true
 				self.Components.BoxFill.Color = color
-				if self.Player and WhitelistPlayer[self.Player.Name] then
-					self.Components.BoxFill.Color = ESP.WhitelistColor
-				end
-				if self.Player and BlacklistPlayer[self.Player.Name] then
-					self.Components.BoxFill.Color = ESP.BlacklistColor
-				end
 				self.Components.BoxFill.Size = size
 				self.Components.BoxFill.Position = position
 			else
@@ -322,15 +331,9 @@ function boxBase:Update()
 		local onScreen, size, position = GetBoundingBox(locs.Torso)
 		if onScreen and size and position then
 			self.Components.Name.Visible = true
-			self.Components.Name.Position = round(position + Vector2.new(size.X * .5, -(self.Components.Name.TextBounds.Y + 2)))
+			self.Components.Name.Position = round(position + Vector2.new(size.X * .5, - (self.Components.Name.TextBounds.Y + 2)))
 			self.Components.Name.Text = self.Name
 			self.Components.Name.Color = color
-			if self.Player and WhitelistPlayer[self.Player.Name] then
-				self.Components.Name.Color = ESP.WhitelistColor
-			end
-			if self.Player and BlacklistPlayer[self.Player.Name] then
-				self.Components.Name.Color = ESP.BlacklistColor
-			end
 		else
 			self.Components.Name.Visible = false
 		end
@@ -344,12 +347,6 @@ function boxBase:Update()
 			self.Components.Distance.Position = round(position + Vector2.new(size.X * .5, size.Y + 1))
 			self.Components.Distance.Text = math.floor((cam.CFrame.Position - cf.Position).magnitude) .. "m"
 			self.Components.Distance.Color = color
-			if self.Player and WhitelistPlayer[self.Player.Name] then
-				self.Components.Distance.Color = ESP.WhitelistColor
-			end
-			if self.Player and BlacklistPlayer[self.Player.Name] then
-				self.Components.Distance.Color = ESP.BlacklistColor
-			end
 		else
 			self.Components.Distance.Visible = false
 		end
@@ -361,27 +358,56 @@ function boxBase:Update()
 		if Vis7 then
 			self.Components.Tracer.Visible = true
 			self.Components.Tracer.From = Vector2.new(TorsoPos.X, TorsoPos.Y)
-			self.Components.Tracer.To = ESP.Origin == "Mouse" and uis:GetMouseLocation() or ESP.Origin == "Bottom" and Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / ESP.AttachShift)
+			self.Components.Tracer.To = ESP.Origin == "Mouse" and UIS:GetMouseLocation() or ESP.Origin == "Bottom" and Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / ESP.AttachShift)
 			self.Components.Tracer.Color = color
-			if self.Player and WhitelistPlayer[self.Player.Name] then
-				self.Components.Tracer.Color = ESP.WhitelistColor
-			end
-			if self.Player and BlacklistPlayer[self.Player.Name] then
-				self.Components.Tracer.Color = ESP.BlacklistColor
-			end
-			self.Components["Tracer"].ZIndex = IsPlrHighlighted and 2 or 1
+			self.Components["Tracer"].ZIndex = IsMeHighlighted and 2 or 1
 		else
 			self.Components.Tracer.Visible = false
 		end
 	else
 		self.Components.Tracer.Visible = false
 	end
+	if ESP.Bars and ESP.FaceCamera then
+		if not ESP.Boxes then
+			TopLeft, Vis1 = WorldToViewportPoint(cam, locs.TopLeft.p)
+			BottomLeft, Vis3 = WorldToViewportPoint(cam, locs.BottomLeft.p)
+		end
+		local amount = 0
+		for i, v in next, self.Bars do
+			if (Vis1 or Vis3) and v.Value < 1 then
+				local x = TopLeft.X - amount * 5 - 3
+				local barWidth = 4
+				local barPadding = 1
+				v.Components.BarBackground.Visible = true
+				v.Components.BarBackground.PointA = Vector2.new(x, TopLeft.Y)
+				v.Components.BarBackground.PointB = Vector2.new(x - barWidth, TopLeft.Y)
+				v.Components.BarBackground.PointC = Vector2.new(x - barWidth, BottomLeft.Y)
+				v.Components.BarBackground.PointD = Vector2.new(x, BottomLeft.Y)
+				v.Components.Bar.Visible = true
+				v.Components.Bar.Color = v.Color
+				local height = (BottomLeft.Y - TopLeft.Y - barPadding * 2) * (1 - v.Value)
+				v.Components.Bar.PointA = Vector2.new(x - barPadding, TopLeft.Y + height + barPadding)
+				v.Components.Bar.PointB = Vector2.new(x - barWidth + barPadding, TopLeft.Y + height + barPadding)
+				v.Components.Bar.PointC = Vector2.new(x - barWidth + barPadding, BottomLeft.Y - barPadding)
+				v.Components.Bar.PointD = Vector2.new(x - barPadding, BottomLeft.Y - barPadding)
+				amount = amount + 1
+			else
+				v.Components.BarBackground.Visible = false
+				v.Components.Bar.Visible = false
+			end
+		end
+	else
+		for i, v in next, self.Bars do
+			v.Components.BarBackground.Visible = false
+			v.Components.Bar.Visible = false
+		end
+	end
 	if ESP.Health then
 		local onScreen, size, position = GetBoundingBox(locs.Torso)
 		if onScreen and size and position then
 			if self.Object and self.Object:FindFirstChildOfClass("Humanoid") then
 				local Health, MaxHealth = self.Object:FindFirstChildOfClass("Humanoid").Health, self.Object:FindFirstChildOfClass("Humanoid").MaxHealth
-				local healthBarSize = round(Vector2.new(1, -(size.Y * (Health / MaxHealth))))
+				local healthBarSize = round(Vector2.new(1, - (size.Y * (Health / MaxHealth))))
 				local healthBarPosition = round(Vector2.new(position.X - (3 + healthBarSize.X), position.Y + size.Y))
 				local g = Color3.fromRGB(0, 255, 8)
 				local r = Color3.fromRGB(255, 0, 0)
@@ -392,12 +418,12 @@ function boxBase:Update()
 				self.Components.HealthBar.Position = healthBarPosition
 				self.Components.HealthBarOutline.Visible = true
 				self.Components.HealthBarOutline.Transparency = 1
-				self.Components.HealthBarOutline.Size = round(Vector2.new(healthBarSize.X, -size.Y) + Vector2.new(2, -2))
-				self.Components.HealthBarOutline.Position = healthBarPosition - Vector2.new(1, -1)
+				self.Components.HealthBarOutline.Size = round(Vector2.new(healthBarSize.X, - size.Y) + Vector2.new(2, - 2))
+				self.Components.HealthBarOutline.Position = healthBarPosition - Vector2.new(1, - 1)
 				self.Components.HealthText.Visible = true
 				self.Components.HealthText.Color = r:lerp(g, Health / MaxHealth)
 				self.Components.HealthText.Text = math.floor(Health + .5) .. " | " .. MaxHealth
-				self.Components.HealthText.Position = round(position + Vector2.new(size.X + 3, -3))
+				self.Components.HealthText.Position = round(position + Vector2.new(size.X + 3, - 3))
 			end
 		else
 			self.Components.HealthBar.Visible = false
@@ -418,12 +444,6 @@ function boxBase:Update()
 				self.Components.Items.Position = round(position + Vector2.new(size.X * .5, size.Y - 50))
 				self.Components.Items.Visible = true
 				self.Components.Items.Color = color
-				if self.Player and WhitelistPlayer[self.Player.Name] then
-					self.Components.Items.Color = ESP.WhitelistColor
-				end
-				if self.Player and BlacklistPlayer[self.Player.Name] then
-					self.Components.Items.Color = ESP.BlacklistColor
-				end
 			else
 				self.Components.Items.Visible = false
 			end
@@ -496,38 +516,6 @@ function boxBase:Update()
 						self.Components.R15SkeleLowerTorsoRightUpperLeg.Color = color
 						self.Components.R15SkeleRightUpperLegRightLowerLeg.Color = color
 						self.Components.R15SkeleRightLowerLegRightFoot.Color = color
-						if self.Player and WhitelistPlayer[self.Player.Name] then
-							self.Components.R15SkeleHeadUpperTorso.Color = ESP.WhitelistColor
-							self.Components.R15SkeleUpperTorsoLowerTorso.Color = ESP.WhitelistColor
-							self.Components.R15SkeleUpperTorsoLeftUpperArm.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLeftUpperArmLeftLowerArm.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLeftLowerArmLeftHand.Color = ESP.WhitelistColor
-							self.Components.R15SkeleUpperTorsoRightUpperArm.Color = ESP.WhitelistColor
-							self.Components.R15SkeleRightUpperArmRightLowerArm.Color = ESP.WhitelistColor
-							self.Components.R15SkeleRightLowerArmRightHand.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLowerTorsoLeftUpperLeg.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLeftUpperLegLeftLowerLeg.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLeftLowerLegLeftFoot.Color = ESP.WhitelistColor
-							self.Components.R15SkeleLowerTorsoRightUpperLeg.Color = ESP.WhitelistColor
-							self.Components.R15SkeleRightUpperLegRightLowerLeg.Color = ESP.WhitelistColor
-							self.Components.R15SkeleRightLowerLegRightFoot.Color = ESP.WhitelistColor
-						end
-						if self.Player and BlacklistPlayer[self.Player.Name] then
-							self.Components.R15SkeleHeadUpperTorso.Color = ESP.BlacklistColor
-							self.Components.R15SkeleUpperTorsoLowerTorso.Color = ESP.BlacklistColor
-							self.Components.R15SkeleUpperTorsoLeftUpperArm.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLeftUpperArmLeftLowerArm.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLeftLowerArmLeftHand.Color = ESP.BlacklistColor
-							self.Components.R15SkeleUpperTorsoRightUpperArm.Color = ESP.BlacklistColor
-							self.Components.R15SkeleRightUpperArmRightLowerArm.Color = ESP.BlacklistColor
-							self.Components.R15SkeleRightLowerArmRightHand.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLowerTorsoLeftUpperLeg.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLeftUpperLegLeftLowerLeg.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLeftLowerLegLeftFoot.Color = ESP.BlacklistColor
-							self.Components.R15SkeleLowerTorsoRightUpperLeg.Color = ESP.BlacklistColor
-							self.Components.R15SkeleRightUpperLegRightLowerLeg.Color = ESP.BlacklistColor
-							self.Components.R15SkeleRightLowerLegRightFoot.Color = ESP.BlacklistColor
-						end
 						self.Components.R15SkeleHeadUpperTorso.Visible = true
 						self.Components.R15SkeleUpperTorsoLowerTorso.Visible = true
 						self.Components.R15SkeleUpperTorsoLeftUpperArm.Visible = true
@@ -548,19 +536,19 @@ function boxBase:Update()
 						local H = WorldToViewportPoint(cam, self.Object.Head.Position)
 						local T_Height = self.Object.Torso.Size.Y / 2 - .2
 						local UT = WorldToViewportPoint(cam, (self.Object.Torso.CFrame * CFrame.new(0, T_Height, 0)).Position)
-						local LT = WorldToViewportPoint(cam, (self.Object.Torso.CFrame * CFrame.new(0, -T_Height, 0)).Position)
+						local LT = WorldToViewportPoint(cam, (self.Object.Torso.CFrame * CFrame.new(0, - T_Height, 0)).Position)
 						local LA_Height = self.Object["Left Arm"].Size.Y / 2 - .2
 						local LUA = WorldToViewportPoint(cam, (self.Object["Left Arm"].CFrame * CFrame.new(0, LA_Height, 0)).Position)
-						local LLA = WorldToViewportPoint(cam, (self.Object["Left Arm"].CFrame * CFrame.new(0, -LA_Height, 0)).Position)
+						local LLA = WorldToViewportPoint(cam, (self.Object["Left Arm"].CFrame * CFrame.new(0, - LA_Height, 0)).Position)
 						local RA_Height = self.Object["Right Arm"].Size.Y / 2 - .2
 						local RUA = WorldToViewportPoint(cam, (self.Object["Right Arm"].CFrame * CFrame.new(0, RA_Height, 0)).Position)
-						local RLA = WorldToViewportPoint(cam, (self.Object["Right Arm"].CFrame * CFrame.new(0, -RA_Height, 0)).Position)
+						local RLA = WorldToViewportPoint(cam, (self.Object["Right Arm"].CFrame * CFrame.new(0, - RA_Height, 0)).Position)
 						local LL_Height = self.Object["Left Leg"].Size.Y / 2 - .2
 						local LUL = WorldToViewportPoint(cam, (self.Object["Left Leg"].CFrame * CFrame.new(0, LL_Height, 0)).Position)
-						local LLL = WorldToViewportPoint(cam, (self.Object["Left Leg"].CFrame * CFrame.new(0, -LL_Height, 0)).Position)
+						local LLL = WorldToViewportPoint(cam, (self.Object["Left Leg"].CFrame * CFrame.new(0, - LL_Height, 0)).Position)
 						local RL_Height = self.Object["Right Leg"].Size.Y / 2 - .2
 						local RUL = WorldToViewportPoint(cam, (self.Object["Right Leg"].CFrame * CFrame.new(0, RL_Height, 0)).Position)
-						local RLL = WorldToViewportPoint(cam, (self.Object["Right Leg"].CFrame * CFrame.new(0, -RL_Height, 0)).Position)
+						local RLL = WorldToViewportPoint(cam, (self.Object["Right Leg"].CFrame * CFrame.new(0, - RL_Height, 0)).Position)
 						self.Components.R6SkeleHeadSpine.From = Vector2.new(H.X, H.Y)
 						self.Components.R6SkeleHeadSpine.To = Vector2.new(UT.X, UT.Y)
 						self.Components.R6SkeleSpine.From = Vector2.new(UT.X, UT.Y)
@@ -591,30 +579,6 @@ function boxBase:Update()
 						self.Components.R6SkeleLeftLegLowerTorso.Color = color
 						self.Components.R6SkeleRightLeg.Color = color
 						self.Components.R6SkeleRightLegLowerTorso.Color = color
-						if self.Player and WhitelistPlayer[self.Player.Name] then
-							self.Components.R6SkeleHeadSpine.Color = ESP.WhitelistColor
-							self.Components.R6SkeleSpine.Color = ESP.WhitelistColor
-							self.Components.R6SkeleLeftArm.Color = ESP.WhitelistColor
-							self.Components.R6SkeleLeftArmUpperTorso.Color = ESP.WhitelistColor
-							self.Components.R6SkeleRightArm.Color = ESP.WhitelistColor
-							self.Components.R6SkeleRightArmUpperTorso.Color = ESP.WhitelistColor
-							self.Components.R6SkeleLeftLeg.Color = ESP.WhitelistColor
-							self.Components.R6SkeleLeftLegLowerTorso.Color = ESP.WhitelistColor
-							self.Components.R6SkeleRightLeg.Color = ESP.WhitelistColor
-							self.Components.R6SkeleRightLegLowerTorso.Color = ESP.WhitelistColor
-						end
-						if self.Player and BlacklistPlayer[self.Player.Name] then
-							self.Components.R6SkeleHeadSpine.Color = ESP.BlacklistColor
-							self.Components.R6SkeleSpine.Color = ESP.BlacklistColor
-							self.Components.R6SkeleLeftArm.Color = ESP.BlacklistColor
-							self.Components.R6SkeleLeftArmUpperTorso.Color = ESP.BlacklistColor
-							self.Components.R6SkeleRightArm.Color = ESP.BlacklistColor
-							self.Components.R6SkeleRightArmUpperTorso.Color = ESP.BlacklistColor
-							self.Components.R6SkeleLeftLeg.Color = ESP.BlacklistColor
-							self.Components.R6SkeleLeftLegLowerTorso.Color = ESP.BlacklistColor
-							self.Components.R6SkeleRightLeg.Color = ESP.BlacklistColor
-							self.Components.R6SkeleRightLegLowerTorso.Color = ESP.BlacklistColor
-						end
 						self.Components.R6SkeleHeadSpine.Visible = true
 						self.Components.R6SkeleSpine.Visible = true
 						self.Components.R6SkeleLeftArm.Visible = true
@@ -718,16 +682,6 @@ function boxBase:Update()
 					self.Components.Ball.Color = color
 					self.Components.Ball2.Color = color
 					self.Components.Wanker.Color = color
-					if self.Player and WhitelistPlayer[self.Player.Name] then
-						self.Components.Ball.Color = ESP.WhitelistColor
-						self.Components.Ball2.Color = ESP.WhitelistColor
-						self.Components.Wanker.Color = ESP.WhitelistColor
-					end
-					if self.Player and BlacklistPlayer[self.Player.Name] then
-						self.Components.Ball.Color = ESP.BlacklistColor
-						self.Components.Ball2.Color = ESP.BlacklistColor
-						self.Components.Wanker.Color = ESP.BlacklistColor
-					end
 					self.Components.Ball.Visible = true
 					self.Components.Ball2.Visible = true
 					self.Components.Wanker.Visible = true
@@ -735,7 +689,7 @@ function boxBase:Update()
 			elseif self.Object:FindFirstChildOfClass("Humanoid") and self.Object:FindFirstChildOfClass("Humanoid").RigType == Enum.HumanoidRigType.R6 then
 				if self.Object and self.Object:FindFirstChild("Torso") then
 					local T_Height = self.Object.Torso.Size.Y / 2 - .2
-					local Torso = WorldToViewportPoint(cam, (self.Object.Torso.CFrame * CFrame.new(0, -T_Height, 0)).Position)
+					local Torso = WorldToViewportPoint(cam, (self.Object.Torso.CFrame * CFrame.new(0, - T_Height, 0)).Position)
 					self.Components.Ball.Position = Vector2.new(Torso.X + 3, Torso.Y)
 					self.Components.Ball2.Position = Vector2.new(Torso.X - 3, Torso.Y)
 					self.Components.Wanker.From = Vector2.new(Torso.X, Torso.Y)
@@ -743,16 +697,6 @@ function boxBase:Update()
 					self.Components.Ball.Color = color
 					self.Components.Ball2.Color = color
 					self.Components.Wanker.Color = color
-					if self.Player and WhitelistPlayer[self.Player.Name] then
-						self.Components.Ball.Color = ESP.WhitelistColor
-						self.Components.Ball2.Color = ESP.WhitelistColor
-						self.Components.Wanker.Color = ESP.WhitelistColor
-					end
-					if self.Player and BlacklistPlayer[self.Player.Name] then
-						self.Components.Ball.Color = ESP.BlacklistColor
-						self.Components.Ball2.Color = ESP.BlacklistColor
-						self.Components.Wanker.Color = ESP.BlacklistColor
-					end
 					self.Components.Ball.Visible = true
 					self.Components.Ball2.Visible = true
 					self.Components.Wanker.Visible = true
@@ -778,18 +722,12 @@ function boxBase:Update()
 		local arrowRadius, arrowSize = ESP.OutOfViewArrowsRadius, ESP.OutOfViewArrowsSize
 		local arrowPosition = screenCenter + Vector2.new(objectSpacePoint.X, objectSpacePoint.Z) * arrowRadius
 		local arrowDirection = (arrowPosition - screenCenter).Unit
-		local pointA, pointB, pointC = arrowPosition, screenCenter + arrowDirection * (arrowRadius - arrowSize) + rightVector * arrowSize, screenCenter + arrowDirection * (arrowRadius - arrowSize) + -rightVector * arrowSize
+		local pointA, pointB, pointC = arrowPosition, screenCenter + arrowDirection * (arrowRadius - arrowSize) + rightVector * arrowSize, screenCenter + arrowDirection * (arrowRadius - arrowSize) + - rightVector * arrowSize
 		if ESP.OutOfViewArrows then
 			self.Components.Arrow.Visible = true
 			self.Components.Arrow.Filled = true
 			self.Components.Arrow.Transparency = .5
 			self.Components.Arrow.Color = color
-			if self.Player and WhitelistPlayer[self.Player.Name] then
-				self.Components.Arrow.Color = ESP.WhitelistColor
-			end
-			if self.Player and BlacklistPlayer[self.Player.Name] then
-				self.Components.Arrow.Color = ESP.BlacklistColor
-			end
 			self.Components.Arrow.PointA = pointA
 			self.Components.Arrow.PointB = pointB
 			self.Components.Arrow.PointC = pointC
@@ -816,12 +754,6 @@ function boxBase:Update()
 		if Vis12 then
 			self.Components.Highlight.Enabled = true
 			self.Components.Highlight.FillColor = color
-			if self.Player and WhitelistPlayer[self.Player.Name] then
-				self.Components.Highlight.FillColor = ESP.WhitelistColor
-			end
-			if self.Player and BlacklistPlayer[self.Player.Name] then
-				self.Components.Highlight.FillColor = ESP.BlacklistColor
-			end
 			self.Components.Highlight.FillTransparency = ESP.ChamsTransparency
 			self.Components.Highlight.OutlineTransparency = ESP.ChamsOutlineTransparency
 			self.Components.Highlight.OutlineColor = ESP.ChamsOutlineColor
@@ -834,7 +766,7 @@ function boxBase:Update()
 end
 function ESP:Add(obj, options)
 	if not obj.Parent and not options.RenderInNil then
-		return warn(obj, "has no parent")
+		return warn("[KH ESP]:", obj, "has no parent")
 	end
 	local box = setmetatable({
 		Name = options.Name or obj.Name,
@@ -842,13 +774,14 @@ function ESP:Add(obj, options)
 		Color = options.Color,
 		Size = options.Size or self.BoxSize,
 		Object = obj,
-		Player = options.Player or plrs:GetPlayerFromCharacter(obj),
-		PrimaryPart = options.PrimaryPart or obj.ClassName == "Model" and (obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")) or obj:IsA("BasePart") and obj,
+		Player = options.Player or Players:GetPlayerFromCharacter(obj),
+		PrimaryPart = options.PrimaryPart or obj.ClassName == "Model" and (obj.PrimaryPart or obj:FindFirstChild(ESP.HrpName) or obj:FindFirstChildWhichIsA("BasePart")) or obj:IsA("BasePart") and obj,
 		Components = {},
 		IsEnabled = options.IsEnabled,
 		Temporary = options.Temporary,
 		ColorDynamic = options.ColorDynamic,
-		RenderInNil = options.RenderInNil
+		RenderInNil = options.RenderInNil,
+		Bars = {}
 	}, boxBase)
 	if self:GetBox(obj) then
 		self:GetBox(obj):Remove()
@@ -886,8 +819,15 @@ function ESP:Add(obj, options)
 		Color = box.Color,
 		Center = true,
 		Outline = true,
-		Size = self.TextSize,
+		Size = 19,
 		Visible = self.Enabled and self.Names
+	})
+	
+	box.Components["Tracer"] = Draw("Line", {
+		Thickness = ESP.Thickness,
+		Color = box.Color,
+		Transparency = 1,
+		Visible = self.Enabled and self.Tracers
 	})
 	box.Components["Items"] = Draw("Text", {
 		Color = box.Color,
@@ -1086,7 +1026,7 @@ function ESP:Add(obj, options)
 		end
 	end)
 	local hum = obj:FindFirstChildOfClass("Humanoid")
-	if hum and not ESP.IgnoreHumanoids then
+	if hum then
 		hum.Died:Connect(function()
 			if ESP.AutoRemove ~= false then
 				box:Remove()
@@ -1095,26 +1035,63 @@ function ESP:Add(obj, options)
 	end
 	return box
 end
+local barBase = {}
+barBase.__index = barBase
+function boxBase:AddBar(name, options)
+	local bar = setmetatable({
+		Name = name,
+		Type = "Bar",
+		Color = options.Color,
+		Components = {},
+		Value = 0.4
+	}, barBase)
+
+	table.insert(self.Bars, bar)
+	bar.Components["BarBackground"] = Draw("Quad", {
+		Thickness = ESP.Thickness,
+		Color = Color3.fromRGB(26, 26, 26),
+		Transparency = 1,
+		Filled = true,
+		Visible = ESP.Enabled and ESP.Bars
+	})
+	bar.Components["Bar"] = Draw("Quad", {
+		Thickness = ESP.Thickness,
+		Color = bar.Color,
+		Transparency = 1,
+		Filled = true,
+		Visible = ESP.Enabled and ESP.Bars
+	})
+	for i, v in next, bar.Components do
+		table.insert(self.Components, v)
+	end
+	return bar
+end
 local function CharAdded(char)
-	local p = plrs:GetPlayerFromCharacter(char)
-	if not char:FindFirstChild("HumanoidRootPart") then
+	local p = Players:GetPlayerFromCharacter(char)
+	if not char:FindFirstChild(ESP.HrpName) then
 		local ev
 		ev = char.ChildAdded:Connect(function(c)
-			if c.Name == "HumanoidRootPart" then
+			if c.Name == ESP.HrpName then
 				ev:Disconnect()
-				ESP:Add(char, {
+				local box = ESP:Add(char, {
 					Name = p.Name,
 					Player = p,
 					PrimaryPart = c
 				})
+				for i, v in next, ESP.GlobalBars do
+					coroutine.wrap(v[3])(box, box:AddBar(v[1], v[2]))
+				end
 			end
 		end)
 	else
-		ESP:Add(char, {
+		local box = ESP:Add(char, {
 			Name = p.Name,
 			Player = p,
-			PrimaryPart = char.HumanoidRootPart
+			PrimaryPart = char:FindFirstChild(ESP.HrpName)
 		})
+		for i, v in next, ESP.GlobalBars do
+			coroutine.wrap(v[3])(box, box:AddBar(v[1], v[2]))
+		end
 	end
 end
 local function PlayerAdded(p)
@@ -1123,24 +1100,15 @@ local function PlayerAdded(p)
 		coroutine.wrap(CharAdded)(p.Character)
 	end
 end
-plrs.PlayerAdded:Connect(PlayerAdded)
-for _, v in next, plrs:GetPlayers(), 1 do
-	PlayerAdded(v)
-end
-function ESP:Unload()
-	if ESP.OnRenderStepped then
-		ESP.OnRenderStepped:Disconnect()
+Players.PlayerAdded:Connect(PlayerAdded)
+for i, v in next, Players:GetPlayers() do
+	if v ~= Me then
+		PlayerAdded(v)
 	end
-	for _, obj in pairs(self.Objects) do
-		if obj.Remove then
-			obj:Remove()
-		end
-	end
-	table.clear(self.Objects)
 end
 ESP.OnRenderStepped = game:GetService("RunService"):BindToRenderStep("ESP", (ESP.UseRenderValue and ESP.RenderValue) or Enum.RenderPriority.Camera.Value + 1, function()
 	cam = workspace.CurrentCamera
-	for _, v in (ESP.Enabled and pairs or ipairs)(ESP.Objects) do
+	for i, v in (ESP.Enabled and pairs or ipairs)(ESP.Objects) do
 		if v.Update then
 			local s, e = pcall(v.Update, v)
 			if not s then
@@ -1148,5 +1116,10 @@ ESP.OnRenderStepped = game:GetService("RunService"):BindToRenderStep("ESP", (ESP
 			end
 		end
 	end
+	for i, v in (pairs or ipairs)(ESP.Render) do 
+		if v.Update then
+		    local s, e = pcall(v.Update, v)
+		end
+    end
 end)
 return ESP
