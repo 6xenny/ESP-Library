@@ -43,7 +43,9 @@ local ESP = {
 	Objects = setmetatable({}, {
 		__mode = "kv"
 	}),
-	Render = {},
+	Render = setmetatable({}, {
+		__mode = ""
+	}),
 	Overrides = {},
 	UseRenderValue = true,
 	RenderValue = 200
